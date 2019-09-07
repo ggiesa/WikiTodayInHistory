@@ -3,6 +3,7 @@ import pickle
 from datetime import datetime
 from copy import copy
 import calendar
+import traceback
 
 import requests
 from bs4 import BeautifulSoup
@@ -13,9 +14,14 @@ class C:
     YEARS = list(range(1995, 2019))
     BASE_URL = 'https://en.wikipedia.org/wiki/Portal:Current_events/'
 
+def load_results(path):
+    with open('scraper_2019-59-06_1567839551.pkl', 'rb') as f:
+        return pickle.load(f)
+
 def get_raw(year, month, base_url=C.BASE_URL):
     r = requests.get(base_url + f'{month}_{year}')
     return r.text
+
 
 def parser(raw_month_html):
     soup = BeautifulSoup(raw_month_html, features="html.parser")
@@ -66,6 +72,7 @@ class CurrentEventsScraper:
         months = {month:{} for month in self.months}
         self.raw = {year:copy(months) for year in self.years}
         self.parsed = {year:copy(months) for year in self.years}
+        self.errors = {'scraper':[], 'parser':[]}
 
 
     def _get_raw(self):
@@ -76,7 +83,14 @@ class CurrentEventsScraper:
         with FillingSquaresBar('Scraping Raw', max=len(self.years)*len(self.months)) as bar:
             for year in self.years:
                 for month in self.months:
-                    self.raw[year][month] = self.scraper(year, month, self.base_url)
+                    try:
+                        self.raw[year][month] = self.scraper(year, month, self.base_url)
+                    except:
+                        self.errors['scraper'].append({
+                            'error':traceback.format_exc(),
+                            'year':year,
+                            'month':month
+                        })
                     bar.next()
 
 
@@ -85,13 +99,22 @@ class CurrentEventsScraper:
         with FillingSquaresBar('Parsing', max=len(self.years)*len(self.months)) as bar:
             for year in self.raw:
                 for month in self.raw[year]:
-                    self.parsed[year][month] = self.parser(self.raw[year][month])
+                    try:
+                        self.parsed[year][month] = self.parser(self.raw[year][month])
+                    except:
+                        self.errors['parser'].append({
+                            'error':traceback.format_exc(),
+                            'year':year,
+                            'month':month
+                        })
                     bar.next()
+
 
     def run(self):
         """Scrape wikipedia for current events for given years and months, parse results into dict"""
         self._get_raw()
         self._parse_raw()
+
 
     def save(self, path=None):
         path = path or f"./scraper_{datetime.utcnow().strftime('%Y-%M-%d_%s')}.pkl"
@@ -99,8 +122,7 @@ class CurrentEventsScraper:
             pickle.dump(self, f)
 
 
-
 if __name__ == '__main__':
-    c = CurrentEventsScraper(1999, 'June')
+    c = CurrentEventsScraper()
     c.run()
     c.save()
