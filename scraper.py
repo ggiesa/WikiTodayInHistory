@@ -35,39 +35,37 @@ class CurrentEventsScraper:
         self.errors = {'scraper':[], 'parser':[]}
 
 
-    def _log_error(self, key, year, month, trace):
-        self.errors[key].append({
+    def _log_error(self, collection, year, month, trace):
+        collection.append({
             'error':trace,
             'year':year,
             'month':month
         })
 
-
-    def _get_raw(self):
-        """Scrape raw html strings for current events in given years.
-            Return:
-                dict: {year:{January:<html>, February:<html>...}}
-        """
-        with FillingSquaresBar('Scraping Raw', max=len(self.years)*len(self.months)) as bar:
+    def _interval_generator(self, task_name):
+        with FillingSquaresBar(task_name, max=len(self.years)*len(self.months)) as bar:
             for year in self.years:
                 for month in self.months:
-                    try:
-                        self.raw[year][month] = self.scraper(self.base_url + f'{month}_{year}')
-                    except:
-                        self._log_error('scraper', year, month, traceback.format_exc())
+                    yield (year, month)
                     bar.next()
+
+
+    def _get_raw(self):
+        """Scrape raw html strings for current events in given years."""
+        for year, month in self._interval_generator("Scraping Raw"):
+            try:
+                self.raw[year][month] = self.scraper(self.base_url + f'{month}_{year}')
+            except:
+                self._log_error(self.errors['scraper'], year, month, traceback.format_exc())
 
 
     def _parse_raw(self):
         """Iterate through raw monthly data, parsing daily events into dict"""
-        with FillingSquaresBar('Parsing', max=len(self.years)*len(self.months)) as bar:
-            for year in self.raw:
-                for month in self.raw[year]:
-                    try:
-                        self.parsed[year][month] = self.parser(self.raw[year][month])
-                    except:
-                        self._log_error('parser', year, month, traceback.format_exc())
-                    bar.next()
+        for year, month in self._interval_generator("Parsing"):
+            try:
+                self.parsed[year][month] = self.parser(self.raw[year][month])
+            except:
+                self._log_error(self.errors['parser'], year, month, traceback.format_exc())
 
 
     def run(self):
@@ -82,6 +80,6 @@ class CurrentEventsScraper:
 
 
 if __name__ == '__main__':
-    c = CurrentEventsScraper()
+    c = CurrentEventsScraper(1999)
     c.run()
     c.save()
